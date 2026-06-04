@@ -1,11 +1,7 @@
 import os
 import numpy as np
-import pandas as pd
 from flask import Flask, request, render_template_string
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.models import load_model
 
 app = Flask(__name__)
 
@@ -16,38 +12,8 @@ group_mapping = {
     "특수 도메인군(D)": ["game_developer", "embedded_engineer", "robotics_engineer", "blockchain_developer", "qa_engineer"]
 }
 
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7kWaukJOHUTib4m028Wj-fWuf_cGWO-br-OminJ1k7pP7KqHwIkhUxAvShzrBcTRz9OQNXWHyC5f_/pub?output=csv"
-df = pd.read_csv(SHEET_URL)
-
-text_to_score = {"전혀 아니다": 1, "아니다": 2, "보통이다": 3, "그렇다": 4, "매우 그렇다": 5}
-survey_df = df.iloc[:, 2:26].replace(text_to_score)                                            
-survey_matrix = survey_df.to_numpy().astype(float)
-
-np.random.seed(42)
-virtual_data = np.random.randint(1, 6, size=(1000, 24)).astype(float)
-X_data = np.concatenate((survey_matrix, virtual_data), axis=0)
-X_scaled = X_data / 5.0
-
-y_raw = np.random.randint(0, 4, size=X_scaled.shape[0])
-
-y_real = df['25. 당신이 향후 가장 도전해보고 싶거나, 현재 가장 관심이 많은 컴퓨터 공학 분야는 무엇인가요? '].replace({
-    "사용자 중심의 웹/앱 서비스를 만드는 분야": 0,
-    "데이터 분석 및 인공지능 모델을 연구하는 분야": 1,
-    "서버 인프라 구축 및 사이버 보안을 담당하는 분야": 2,
-    "게임 개발, 로봇/장비 제어, 블록체인 등 특수 기술 분야": 3
-}).to_numpy().astype(int)
-
-y_raw[:len(y_real)] = y_real
-
-Y_data = to_categorical(y_raw, num_classes=4)
-X_train, X_test, y_train, y_test = train_test_split(X_scaled, Y_data, test_size=0.2, random_state=42)
-
-model = Sequential([
-    Dense(32, input_shape=(24,), activation='relu'),
-    Dense(4, activation='softmax')
-])
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_test, y_test))
+# 🔥 중요: 매번 학습하지 않고, 깃허브에 올린 완성된 모델 파일만 쏙 읽어옵니다!
+model = load_model('survey_model.h5')
 
 html_template = """
 <!DOCTYPE html>
@@ -108,5 +74,4 @@ def result():
     return render_template_string(html_template, results=web_results)
 
 if __name__ == '__main__':
-    # Render 환경의 가변 포트 번호를 수신하기 위해 임포트 os 대신 시스템 값 다이렉트 호출 처리
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
