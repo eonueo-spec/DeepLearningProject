@@ -5,11 +5,12 @@ from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
 
+# 🇰🇷 세부 직업명을 직관적인 한글 명칭으로 변경했습니다!
 group_mapping = {
-    "애플리케이션 개발군(A)": ["frontend", "backend", "web_developer", "mobile_developer", "uiux_designer"],
-    "데이터 및 AI 전문군(B)": ["data_scientist", "ai_engineer", "data_engineer", "database_admin", "software_engineer"],
-    "시스템 및 보안군(C)": ["devops_engineer", "cloud_engineer", "security_engineer", "system_engineer", "network_engineer"],
-    "특수 도메인군(D)": ["game_developer", "embedded_engineer", "robotics_engineer", "blockchain_developer", "qa_engineer"]
+    "애플리케이션 개발군(A)": ["프론트엔드 개발자", "백엔드 개발자", "웹 풀스택 개발자", "앱(모바일) 개발자", "UI/UX 디자이너"],
+    "데이터 및 AI 전문군(B)": ["데이터 사이언티스트", "AI/딥러닝 엔지니어", "데이터 엔지니어", "데이터베이스 관리자(DBA)", "일반 소프트웨어 엔지니어"],
+    "시스템 및 보안군(C)": ["데브옵스(DevOps) 엔지니어", "클라우드 아키텍트", "보안 엔지니어", "시스템 관리자", "네트워크 엔지니어"],
+    "특수 도메인군(D)": ["게임 개발자", "임베디드 엔지니어", "로봇 공학 엔지니어", "블록체인 개발자", "QA(품질보증) 엔지니어"]
 }
 
 # JSON 가중치 로드
@@ -33,7 +34,6 @@ def predict_pure_numpy(X):
     out = softmax(np.dot(h1, W2) + b2)
     return out
 
-# 🎨 디자인이 대폭 개선된 HTML 템플릿
 html_template = """
 <!DOCTYPE html>
 <html>
@@ -42,7 +42,7 @@ html_template = """
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; line-height: 1.6; padding: 20px; max-width: 550px; margin: 0 auto; background-color: #f5f7fa; color: #333; }
+        body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; line-height: 1.6; padding: 20px; max-width: 550px; margin: 0 auto; background-color: #f5f7fa; color: #333; }
         h2 { text-align: center; color: #2c3e50; margin-bottom: 25px; font-size: 1.5em; }
         
         /* 1등 직군 독점 강조 스타일 */
@@ -110,7 +110,6 @@ def result():
     new_user_scaled = np.array(new_user).astype(float) / 5.0
     pred_prob = predict_pure_numpy(new_user_scaled)
 
-    # 전처리 및 결과 빌드
     all_results = []
     for i in range(4):
         group_name = group_names[i]
@@ -127,11 +126,10 @@ def result():
             "jobs": [(rank, job_name) for rank, (job_name, score) in enumerate(sorted_jobs, 1)]
         })
 
-    # 1등 직군 찾기 (확률 기준 내림차순 정렬)
     all_results = sorted(all_results, key=lambda x: x['prob_raw'], reverse=True)
     
-    top_result = all_results[0]      # 가장 높은 직군
-    other_results = all_results[1:]  # 나머지 직군들
+    top_result = all_results[0]
+    other_results = all_results[1:]
 
     return render_template_string(
         html_template, 
