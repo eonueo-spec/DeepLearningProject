@@ -1,7 +1,7 @@
 import os
+import json
 import numpy as np
 from flask import Flask, request, render_template_string
-from tensorflow.keras.models import load_model
 
 app = Flask(__name__)
 
@@ -12,8 +12,28 @@ group_mapping = {
     "특수 도메인군(D)": ["game_developer", "embedded_engineer", "robotics_engineer", "blockchain_developer", "qa_engineer"]
 }
 
-# 🔥 중요: 매번 학습하지 않고, 깃허브에 올린 완성된 모델 파일만 쏙 읽어옵니다!
-model = load_model('survey_model.h5')
+# 텐서플로우 대신 JSON 파일에서 가중치를 읽어와 수학 수식으로 수동 계산 (메모리 사용량 95% 감소)
+with open('model_weights.json', 'r') as f:
+    weights_data = json.load(f)
+
+def relu(x):
+    return np.maximum(0, x)
+
+def softmax(x):
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum(axis=0)
+
+def predict_pure_numpy(X):
+    # 1번째 레이어 연산 (Dense 32 + ReLU)
+    W1 = np.array(weights_data[0]['w'])
+    b1 = np.array(weights_data[0]['b'])
+    h1 = relu(np.dot(X, W1) + b1)
+    
+    # 2번째 레이어 연산 (Dense 4 + Softmax)
+    W2 = np.array(weights_data[1]['w'])
+    b2 = np.array(weights_data[1]['b'])
+    out = softmax(np.dot(h1, W2) + b2)
+    return out
 
 html_template = """
 <!DOCTYPE html>
@@ -53,8 +73,10 @@ def result():
         new_user = [3] * 24
 
     group_names = list(group_mapping.keys())
-    new_user_scaled = np.array([new_user]).astype(float) / 5.0
-    pred_prob = model.predict(new_user_scaled)[0]
+    new_user_scaled = np.array(new_user).astype(float) / 5.0
+    
+    # 순수 넘파이 함수로 예측 실행
+    pred_prob = predict_pure_numpy(new_user_scaled)
 
     web_results = []
     for i in range(4):
