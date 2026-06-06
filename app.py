@@ -1,29 +1,28 @@
 import os
 import json
 import numpy as np
+import pandas as pd
 from flask import Flask, request, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# [추천 시스템용 기준 데이터셋 및 인메모리 유저 데이터베이스 선언]
-# 4대 컴퓨터공학 직군에 매핑되는 20개의 세부 직업군을 선언하여 결과 화면 바인딩 기준으로 활용함
-# 구글 앱스 스크립트가 전송한 고유 USER ID와 24개 문항 점수 쌍을 서버 가상 메모리에 실시간 누적 저장하는 딕셔너리를 개설함
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7kWaukJOHUTib4m028Wj-fWuf_cGWO-br-OminJ1k7pP7KqHwIkhUxAvShzrBcTRz9OQNXWHyC5f_/pub?output=csv"
+
 group_mapping = {
     "애플리케이션 개발군(A)": ["프론트엔드 개발자", "백엔드 개발자", "웹 풀스택 개발자", "앱(모바일) 개발자", "UI/UX 디자이너"],
     "데이터 및 AI 전문군(B)": ["데이터 사이언티스트", "AI/딥러닝 엔지니어", "데이터 엔지니어", "데이터베이스 관리자(DBA)", "일반 소프트웨어 엔지니어"],
     "시스템 및 보안군(C)": ["데브옵스(DevOps) 엔지니어", "클라우드 아키텍트", "보안 엔지니어", "시스템 관리자", "네트워크 엔지니어"],
     "특수 도메인군(D)": ["게임 개발자", "임베디드 엔지니어", "로봇 공학 엔지니어", "블록체인 개발자", "QA(품질보증) 엔지니어"]
 }
-user_database = {}
 
-# [JSON 가중치 파일 로드 및 안전성 확보]
-# 15시간 전 업데이트된 가중치 파일의 내부 구조 변경에 대응하기 위해 파일 읽기 예외 처리를 구성함
-# 파일 로드 실패 혹은 인덱스 참조 에러 발생 시, 서버 다운(Internal Server Error)을 막고 연산을 지속하도록 더미 가중치 배열을 생성함
 try:
     with open('model_weights.json', 'r') as f:
         weights_data = json.load(f)
 except:
-    weights_data = [{"w": np.ones((24, 16)).tolist(), "b": np.zeros(16).tolist()}, {"w": np.ones((16, 4)).tolist(), "b": np.zeros(4).tolist()}]
+    weights_data = [
+        {"w": np.ones((24, 32)).tolist(), "b": np.zeros(32).tolist()},
+        {"w": np.ones((32, 4)).tolist(),  "b": np.zeros(4).tolist()}
+    ]
 
 def relu(x):
     return np.maximum(0, x)
@@ -32,21 +31,41 @@ def softmax(x):
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum(axis=0)
 
-# [순수 넘파이 기반 신경망 순전파 연산 함수 및 차원 예외 처리]
-# 1차원 유저 점수 입력 배열(24,)과 2차원 가중치 행렬의 차원을 맞추기 위해 가중치를 전치(.T)하여 행렬 곱을 수행함
-# model_weights.json 파일의 행렬 구조 변형으로 인한 Shape Mismatch 충돌 발생 시, 프로세스가 폭발하지 않도록 균등 확률 배열을 반환하는 예외 방어선을 구축함
 def predict_pure_numpy(X):
     try:
         W1 = np.array(weights_data[0]['w'])
         b1 = np.array(weights_data[0]['b'])
         h1 = relu(np.dot(W1.T, X) + b1)
-        
         W2 = np.array(weights_data[1]['w'])
         b2 = np.array(weights_data[1]['b'])
         out = softmax(np.dot(W2.T, h1) + b2)
         return out
     except:
         return np.array([0.25, 0.25, 0.25, 0.25])
+
+def get_scores_from_sheet(user_id):
+    try:
+        text_to_score = {"전혀 아니다": 1, "아니다": 2, "보통이다": 3, "그렇다": 4, "매우 그렇다": 5}
+        df = pd.read_csv(SHEET_URL)
+
+        # AH열(인덱스 33)에서 user_id 검색
+        uid_col = df.columns[33]
+        matched = df[df[uid_col].astype(str) == user_id]
+
+        if matched.empty:
+            return None
+
+        row = matched.iloc[-1]
+
+        # C~Z열(인덱스 2:26) = 문항 1~24
+        raw = row.iloc[2:26]
+        scores = [text_to_score.get(str(v).strip(), 3) for v in raw]
+
+        return scores[:24]
+
+    except Exception as e:
+        print(f"시트 읽기 오류: {e}")
+        return None
 
 html_template = """
 <!DOCTYPE html>
@@ -85,7 +104,6 @@ html_template = """
             <span class="top-prob">{{ top_result.prob }}%</span>
         </div>
         <div class="clear"></div>
-        
         <div class="job-list">
             <div style="font-weight: bold; margin-bottom: 10px; color: #34495e; font-size: 0.95em;">🎯 추천 세부 직무 순위</div>
             {% for rank, job in top_result.jobs %}
@@ -107,24 +125,22 @@ html_template = """
 </html>
 """
 
-# [구글 앱스 스크립트 연동용 실시간 데이터 적재 수신 라우터]
-# 구글 시트 백엔드에서 쏴주는 USER ID와 24개 문항 배열 데이터를 받아 메모리 딕셔너리에 실시간 맵 구조로 동기화함
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
-    if not data or 'user_id' not in data or 'scores' not in data:
-        return jsonify({"status": "error", "message": "Invalid payload"}), 400
-    
-    user_database[data['user_id']] = data['scores']
+    if not data or 'user_id' not in data:
+        return jsonify({"status": "error"}), 400
     return jsonify({"status": "success"}), 200
 
-# [USER ID 기반 인공지능 분석 연산 및 결과 시각화 라우터]
-# 주소창 파라미터에서 id 값을 읽어와 가상 데이터베이스에서 해당 유저의 24개 점수 배열을 매핑함
-# ID가 누락되었거나 찾을 수 없는 경우 웹 에러 폭발을 방지하고자 디폴트 배열([3]*24)로 세션을 유지하는 방어벽을 구축함
 @app.route('/result')
 def result():
     user_id = request.args.get('id', 'UNKNOWN')
-    new_user = user_database.get(user_id, [3] * 24)
+    scores = get_scores_from_sheet(user_id)
+
+    if scores is None:
+        new_user = [3] * 24
+    else:
+        new_user = scores
 
     group_names = list(group_mapping.keys())
     new_user_scaled = np.array(new_user).astype(float) / 5.0
@@ -134,11 +150,9 @@ def result():
     for i in range(4):
         group_name = group_names[i]
         prob = pred_prob[i]
-        
         jobs_in_group = group_mapping[group_name]
         job_scores = {job: (prob * 50) + (np.mean(new_user) * 5) + np.random.uniform(1, 5) for job in jobs_in_group}
         sorted_jobs = sorted(job_scores.items(), key=lambda x: x[1], reverse=True)
-        
         all_results.append({
             "group_name": group_name,
             "prob_raw": prob,
@@ -147,31 +161,28 @@ def result():
         })
 
     all_results = sorted(all_results, key=lambda x: x['prob_raw'], reverse=True)
-    
-    top_result = all_results[0]
-    other_results = all_results[1:]
 
     return render_template_string(
-        html_template, 
+        html_template,
         user_id=user_id,
-        top_result=top_result, 
-        other_results=other_results
+        top_result=all_results[0],
+        other_results=all_results[1:]
     )
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
-
 
 @app.route('/debug')
 def debug():
-    # 최근 등록된 유저 목록과 scores를 전부 출력
-    return jsonify({
-        "user_count": len(user_database),
-        "users": {
-            uid: {
-                "scores": scores,
-                "length": len(scores)
-            }
-            for uid, scores in user_database.items()
-        }
-    })
+    try:
+        df = pd.read_csv(SHEET_URL)
+        last_row = df.iloc[-1]
+        uid = str(last_row.iloc[33])
+        scores = get_scores_from_sheet(uid)
+        return jsonify({
+            "last_user_id": uid,
+            "scores": scores,
+            "scores_length": len(scores) if scores else 0
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
