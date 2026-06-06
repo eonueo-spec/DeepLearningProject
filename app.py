@@ -164,10 +164,16 @@ if __name__ == '__main__':
 
 @app.route('/debug')
 def debug():
-    W1 = np.array(weights_data[0]['w'])
-    W2 = np.array(weights_data[1]['w'])
+    # C군 핵심 문항(0,5,9,13,17,21번)만 5점, 나머지 1점으로 테스트
+    test_C = [1.0] * 24
+    for idx in [0, 5, 9, 13, 17, 21]:
+        test_C[idx] = 5.0
+    
+    test_scaled = np.array(test_C) / 5.0
+    pred = predict_pure_numpy(test_scaled)
+    
     return jsonify({
-        "W1_shape": list(W1.shape),
-        "W2_shape": list(W2.shape),
-        "W1_first_val": weights_data[0]['w'][0][0]  # -0.129... 이 값이 나와야 정상
+        "input_sample": test_C,
+        "pred_ABCD": pred.tolist(),
+        "predicted_group": ['A','B','C','D'][int(np.argmax(pred))]
     })
