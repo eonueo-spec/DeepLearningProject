@@ -5,7 +5,7 @@ from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
 
-# 🇰🇷 세부 직업명을 직관적인 한글 명칭으로 변경했습니다!
+# 세부 직업명 정의
 group_mapping = {
     "애플리케이션 개발군(A)": ["프론트엔드 개발자", "백엔드 개발자", "웹 풀스택 개발자", "앱(모바일) 개발자", "UI/UX 디자이너"],
     "데이터 및 AI 전문군(B)": ["데이터 사이언티스트", "AI/딥러닝 엔지니어", "데이터 엔지니어", "데이터베이스 관리자(DBA)", "일반 소프트웨어 엔지니어"],
@@ -25,13 +25,17 @@ def softmax(x):
     return e_x / e_x.sum(axis=0)
 
 def predict_pure_numpy(X):
+    # W1 구조: (24, 32) / b1 구조: (32,) / X 구조: (24,)
     W1 = np.array(weights_data[0]['w'])
     b1 = np.array(weights_data[0]['b'])
-    h1 = relu(np.dot(X, W1) + b1)
+    # 🎯 [핵심 수정] 1차원 데이터 입력에 맞게 가중치 행렬을 전치(.T)하여 행렬 곱 순서를 정형화함
+    h1 = relu(np.dot(W1.T, X) + b1)
     
+    # W2 구조: (32, 4) / b2 구조: (4,) / h1 구조: (32,)
     W2 = np.array(weights_data[1]['w'])
     b2 = np.array(weights_data[1]['b'])
-    out = softmax(np.dot(h1, W2) + b2)
+    # 🎯 [핵심 수정] 마찬가지로 출력층 가중치 행렬을 전치(.T)하여 온전한 4대 직군 확률 차원(4,)을 도출함
+    out = softmax(np.dot(W2.T, h1) + b2)
     return out
 
 html_template = """
@@ -93,7 +97,7 @@ html_template = """
                 <span>• {{ res.group_name }}</span>
                 <span class="sub-prob">{{ res.prob }}%</span>
             </div>
-        {% endfor %}
+        </for %}
     </div>
 </body>
 </html>
