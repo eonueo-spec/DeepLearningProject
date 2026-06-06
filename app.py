@@ -107,3 +107,42 @@ def result():
         new_user = [int(request.args.get(f'q{i}', 3)) for i in range(1, 25)]
     except:
         new_user = [3] * 24
+
+    group_names = list(group_mapping.keys())
+    new_user_scaled = np.array(new_user).astype(float) / 5.0
+    
+    # 🎯 주소창 파라미터 유실이나 연산 실패 시 서버 전체가 터지지 않도록 예외 처리 안전장치 전면 보완
+    try:
+        pred_prob = predict_pure_numpy(new_user_scaled)
+    except:
+        pred_prob = np.array([0.25, 0.25, 0.25, 0.25])
+
+    all_results = []
+    for i in range(4):
+        group_name = group_names[i]
+        prob = pred_prob[i]
+        
+        jobs_in_group = group_mapping[group_name]
+        job_scores = {job: (prob * 50) + (np.mean(new_user) * 5) + np.random.uniform(1, 5) for job in jobs_in_group}
+        sorted_jobs = sorted(job_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        all_results.append({
+            "group_name": group_name,
+            "prob_raw": prob,
+            "prob": f"{prob*100:.1f}",
+            "jobs": [(rank, job_name) for rank, (job_name, score) in enumerate(sorted_jobs, 1)]
+        })
+
+    all_results = sorted(all_results, key=lambda x: x['prob_raw'], reverse=True)
+    
+    top_result = all_results[0]
+    other_results = all_results[1:]
+
+    return render_template_string(
+        html_template, 
+        top_result=top_result, 
+        other_results=other_results
+    )
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
