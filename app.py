@@ -56,19 +56,21 @@ def result():
 
     user_id = request.args.get("id")
     if not user_id:
-        return "No ID provided"
+        return "No ID"
 
     data = sheet.get_all_values()
 
     user_row = None
+
     for row in data:
-        if row[-1] == user_id:
+        if len(row) > 0 and row[-1] == user_id:
             user_row = row
             break
 
     if not user_row:
         return "User not found"
 
+    # 🔥 점수만 추출 (마지막 ID 제외)
     new_user = []
 
     for x in user_row[1:-1]:
@@ -77,17 +79,15 @@ def result():
         except:
             new_user.append(3)
 
-    if len(new_user) < 24:
-        new_user += [3] * (24 - len(new_user))
-
-    new_user = new_user[:24]
+    # 24개 보정
+    new_user = (new_user + [3]*24)[:24]
 
     new_user_scaled = np.array(new_user) / 5.0
 
     try:
         pred_prob = predict_pure_numpy(new_user_scaled)
     except:
-        pred_prob = np.array([0.25, 0.25, 0.25, 0.25])
+        pred_prob = np.array([0.25,0.25,0.25,0.25])
 
     group_names = list(group_mapping.keys())
 
@@ -102,7 +102,7 @@ def result():
         job_scores = {
             job: (prob * 50)
                  + (np.mean(new_user) * 5)
-                 + np.random.uniform(1, 5)
+                 + np.random.uniform(1,5)
             for job in jobs
         }
 
@@ -110,19 +110,15 @@ def result():
 
         all_results.append({
             "group_name": group_name,
-            "prob_raw": prob,
             "prob": f"{prob*100:.1f}",
-            "jobs": [(rank, job) for rank, (job, _) in enumerate(sorted_jobs, 1)]
+            "prob_raw": prob,
+            "jobs": [(idx+1, job) for idx,(job,_) in enumerate(sorted_jobs)]
         })
 
-    all_results = sorted(all_results, key=lambda x: x["prob_raw"], reverse=True)
+    all_results.sort(key=lambda x: x["prob_raw"], reverse=True)
 
     return render_template_string(
         html_template,
         top_result=all_results[0],
         other_results=all_results[1:]
     )
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
