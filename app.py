@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import numpy as np
 import pandas as pd
 from flask import Flask, request, render_template_string, jsonify
@@ -48,7 +49,6 @@ def get_scores_from_sheet(user_id):
         text_to_score = {"전혀 아니다": 1, "아니다": 2, "보통이다": 3, "그렇다": 4, "매우 그렇다": 5}
         df = pd.read_csv(SHEET_URL)
 
-        # AH열(인덱스 33)에서 user_id 검색
         uid_col = df.columns[33]
         matched = df[df[uid_col].astype(str) == user_id]
 
@@ -56,8 +56,6 @@ def get_scores_from_sheet(user_id):
             return None
 
         row = matched.iloc[-1]
-
-        # C~Z열(인덱스 2:26) = 문항 1~24
         raw = row.iloc[2:26]
         scores = [text_to_score.get(str(v).strip(), 3) for v in raw]
 
@@ -135,7 +133,14 @@ def register():
 @app.route('/result')
 def result():
     user_id = request.args.get('id', 'UNKNOWN')
-    scores = get_scores_from_sheet(user_id)
+
+    # 시트에 user_id가 기록될 때까지 최대 3번 재시도
+    scores = None
+    for attempt in range(3):
+        scores = get_scores_from_sheet(user_id)
+        if scores is not None:
+            break
+        time.sleep(3)
 
     if scores is None:
         new_user = [3] * 24
