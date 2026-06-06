@@ -160,3 +160,14 @@ def result():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+
+
+@app.route('/debug')
+def debug():
+    W1 = np.array(weights_data[0]['w'])
+    W2 = np.array(weights_data[1]['w'])
+    return jsonify({
+        "W1_shape": list(W1.shape),
+        "W2_shape": list(W2.shape),
+        "W1_first_val": weights_data[0]['w'][0][0]  # -0.129... 이 값이 나와야 정상
+    })
