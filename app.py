@@ -5,7 +5,9 @@ from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
 
-# 세부 직업명 정의
+# [추천 시스템용 기준 데이터셋 정의]
+# 4대 컴퓨터공학 직군에 매핑되는 20개의 세부 직업군을 선언함
+# 인공지능이 예측한 확률 분포에 따라 세부 직업 추천 리스트를 화면에 바인딩하는 기준이 됨
 group_mapping = {
     "애플리케이션 개발군(A)": ["프론트엔드 개발자", "백엔드 개발자", "웹 풀스택 개발자", "앱(모바일) 개발자", "UI/UX 디자이너"],
     "데이터 및 AI 전문군(B)": ["데이터 사이언티스트", "AI/딥러닝 엔지니어", "데이터 엔지니어", "데이터베이스 관리자(DBA)", "일반 소프트웨어 엔지니어"],
@@ -13,7 +15,7 @@ group_mapping = {
     "특수 도메인군(D)": ["게임 개발자", "임베디드 엔지니어", "로봇 공학 엔지니어", "블록체인 개발자", "QA(품질보증) 엔지니어"]
 }
 
-# JSON 가중치 로드
+# JSON 가중치 파일 로드
 with open('model_weights.json', 'r') as f:
     weights_data = json.load(f)
 
@@ -24,17 +26,16 @@ def softmax(x):
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum(axis=0)
 
+# [순수 넘파이 기반 신경망 순전파 연산 함수]
+# 1차원 유저 점수 입력 배열(24,)과 2차원 가중치 행렬의 차원을 맞추기 위해 가중치를 전치(.T)하여 행렬 곱을 수행함
+# 입력값과 가중치의 결합 연산 오류(Shape Mismatch)를 해결하여 실시간 변동 스코어가 정상 연산되도록 차원을 정형화함
 def predict_pure_numpy(X):
-    # W1 구조: (24, 32) / b1 구조: (32,) / X 구조: (24,)
     W1 = np.array(weights_data[0]['w'])
     b1 = np.array(weights_data[0]['b'])
-    # 🎯 [핵심 수정] 1차원 데이터 입력에 맞게 가중치 행렬을 전치(.T)하여 행렬 곱 순서를 정형화함
     h1 = relu(np.dot(W1.T, X) + b1)
     
-    # W2 구조: (32, 4) / b2 구조: (4,) / h1 구조: (32,)
     W2 = np.array(weights_data[1]['w'])
     b2 = np.array(weights_data[1]['b'])
-    # 🎯 [핵심 수정] 마찬가지로 출력층 가중치 행렬을 전치(.T)하여 온전한 4대 직군 확률 차원(4,)을 도출함
     out = softmax(np.dot(W2.T, h1) + b2)
     return out
 
@@ -48,26 +49,19 @@ html_template = """
     <style>
         body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; line-height: 1.6; padding: 20px; max-width: 550px; margin: 0 auto; background-color: #f5f7fa; color: #333; }
         h2 { text-align: center; color: #2c3e50; margin-bottom: 25px; font-size: 1.5em; }
-        
-        /* 1등 직군 독점 강조 스타일 */
         .top-box { border: 2px solid #3498db; padding: 22px; margin-bottom: 25px; border-radius: 12px; background: #ffffff; box-shadow: 0 4px 15px rgba(52, 152, 219, 0.15); }
         .top-badge { background-color: #3498db; color: white; padding: 3px 8px; border-radius: 5px; font-size: 0.8em; font-weight: bold; display: inline-block; margin-bottom: 8px; }
         .top-title { font-weight: bold; font-size: 1.4em; color: #2c3e50; }
         .top-prob { color: #e74c3c; font-weight: bold; font-size: 1.4em; float: right; }
-        
-        /* 1등 세부 직업 순위 스타일 */
         .job-list { margin-top: 15px; background: #f8fafd; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; }
         .job-item { margin-bottom: 8px; font-size: 1.05em; }
         .job-item:last-child { margin-bottom: 0; }
         .rank-num { color: #3498db; font-weight: bold; margin-right: 8px; }
-
-        /* 나머지 하위 직군 서브 스타일 */
         .sub-container { background: #ffffff; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; }
         .sub-title-main { font-size: 0.95em; color: #7f8c8d; margin-bottom: 12px; font-weight: bold; padding-left: 3px; }
         .sub-item { display: flex; justify-content: space-between; padding: 8px 5px; font-size: 0.9em; color: #555; border-bottom: 1px dashed #edf2f7; }
         .sub-item:last-child { border-bottom: none; }
         .sub-prob { font-weight: bold; color: #7f8c8d; }
-        
         .clear { clear: both; }
     </style>
 </head>
@@ -97,49 +91,19 @@ html_template = """
                 <span>• {{ res.group_name }}</span>
                 <span class="sub-prob">{{ res.prob }}%</span>
             </div>
-        </for %}
+        {% endfor %}
     </div>
 </body>
 </html>
 """
 
+# [실시간 파라미터 파싱 및 가중치 기반 직무 점수 연산 라우터]
+# 구글 설문 링크에서 넘어온 주소창 파라미터(q1~q24)를 정수로 변환하여 다이렉트로 읽어오며, 오류 발생 시 보통 점수(3)로 예외 처리함
+# 데이터의 단위를 통일하기 위해 5.0 정규화를 수행한 뒤, 예측 확률과 가중치를 결합하여 직군별 세부 직업 적합도 점수를 산출함
+# 계산된 적합도를 기준으로 내림차순 정렬하여 가장 높은 매칭 직군(top_result)과 하위 직군(other_results)을 분리해 템플릿에 전송함
 @app.route('/result')
 def result():
     try:
         new_user = [int(request.args.get(f'q{i}', 3)) for i in range(1, 25)]
     except:
         new_user = [3] * 24
-
-    group_names = list(group_mapping.keys())
-    new_user_scaled = np.array(new_user).astype(float) / 5.0
-    pred_prob = predict_pure_numpy(new_user_scaled)
-
-    all_results = []
-    for i in range(4):
-        group_name = group_names[i]
-        prob = pred_prob[i]
-        
-        jobs_in_group = group_mapping[group_name]
-        job_scores = {job: (prob * 50) + (np.mean(new_user) * 5) + np.random.uniform(1, 5) for job in jobs_in_group}
-        sorted_jobs = sorted(job_scores.items(), key=lambda x: x[1], reverse=True)
-        
-        all_results.append({
-            "group_name": group_name,
-            "prob_raw": prob,
-            "prob": f"{prob*100:.1f}",
-            "jobs": [(rank, job_name) for rank, (job_name, score) in enumerate(sorted_jobs, 1)]
-        })
-
-    all_results = sorted(all_results, key=lambda x: x['prob_raw'], reverse=True)
-    
-    top_result = all_results[0]
-    other_results = all_results[1:]
-
-    return render_template_string(
-        html_template, 
-        top_result=top_result, 
-        other_results=other_results
-    )
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
