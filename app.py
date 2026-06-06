@@ -164,16 +164,14 @@ if __name__ == '__main__':
 
 @app.route('/debug')
 def debug():
-    # C군 핵심 문항(0,5,9,13,17,21번)만 5점, 나머지 1점으로 테스트
-    test_C = [1.0] * 24
-    for idx in [0, 5, 9, 13, 17, 21]:
-        test_C[idx] = 5.0
-    
-    test_scaled = np.array(test_C) / 5.0
-    pred = predict_pure_numpy(test_scaled)
-    
+    # 최근 등록된 유저 목록과 scores를 전부 출력
     return jsonify({
-        "input_sample": test_C,
-        "pred_ABCD": pred.tolist(),
-        "predicted_group": ['A','B','C','D'][int(np.argmax(pred))]
+        "user_count": len(user_database),
+        "users": {
+            uid: {
+                "scores": scores,
+                "length": len(scores)
+            }
+            for uid, scores in user_database.items()
+        }
     })
